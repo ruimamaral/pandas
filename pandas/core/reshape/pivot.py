@@ -70,9 +70,12 @@ def pivot_table(
     margins_name: Hashable = "All",
     observed: bool = True,
     sort: bool = True,
+    #*args,
+    **kwargs,
 ) -> DataFrame:
     index = _convert_by(index)
     columns = _convert_by(columns)
+    print(kwargs)
 
     if isinstance(aggfunc, list):
         pieces: list[DataFrame] = []
@@ -90,6 +93,8 @@ def pivot_table(
                 margins_name=margins_name,
                 observed=observed,
                 sort=sort,
+    #            args=args,
+                kwargs=kwargs,
             )
             pieces.append(_table)
             keys.append(getattr(func, "__name__", func))
@@ -109,6 +114,8 @@ def pivot_table(
         margins_name,
         observed,
         sort,
+    #    args,
+        kwargs,
     )
     return table.__finalize__(data, method="pivot_table")
 
@@ -125,11 +132,15 @@ def __internal_pivot_table(
     margins_name: Hashable,
     observed: bool,
     sort: bool,
+    #*args,
+    kwargs,
 ) -> DataFrame:
     """
     Helper of :func:`pandas.pivot_table` for any non-list ``aggfunc``.
     """
     keys = index + columns
+    print('hi')
+    print(kwargs)
 
     values_passed = values is not None
     if values_passed:
@@ -167,7 +178,8 @@ def __internal_pivot_table(
         values = list(values)
 
     grouped = data.groupby(keys, observed=observed, sort=sort, dropna=dropna)
-    agged = grouped.agg(aggfunc)
+    print(kwargs)
+    agged = grouped.agg(aggfunc, **kwargs)
 
     if dropna and isinstance(agged, ABCDataFrame) and len(agged.columns):
         agged = agged.dropna(how="all")
