@@ -234,6 +234,7 @@ def __internal_pivot_table(
             rows=index,
             cols=columns,
             aggfunc=aggfunc,
+            kwargs=kwargs,
             observed=dropna,
             margins_name=margins_name,
             fill_value=fill_value,
@@ -259,6 +260,7 @@ def _add_margins(
     rows,
     cols,
     aggfunc,
+    kwargs,
     observed: bool,
     margins_name: Hashable = "All",
     fill_value=None,
@@ -271,7 +273,9 @@ def _add_margins(
         if margins_name in table.index.get_level_values(level):
             raise ValueError(msg)
 
-    grand_margin = _compute_grand_margin(data, values, aggfunc, margins_name)
+    grand_margin = _compute_grand_margin(
+        data, values, aggfunc, kwargs, margins_name
+    )
 
     if table.ndim == 2:
         # i.e. DataFrame
@@ -292,7 +296,15 @@ def _add_margins(
 
     elif values:
         marginal_result_set = _generate_marginal_results(
-            table, data, values, rows, cols, aggfunc, observed, margins_name
+            table,
+            data,
+            values,
+            rows,
+            cols,
+            aggfunc,
+            kwargs,
+            observed,
+            margins_name,
         )
         if not isinstance(marginal_result_set, tuple):
             return marginal_result_set
@@ -301,7 +313,7 @@ def _add_margins(
         # no values, and table is a DataFrame
         assert isinstance(table, ABCDataFrame)
         marginal_result_set = _generate_marginal_results_without_values(
-            table, data, rows, cols, aggfunc, observed, margins_name
+            table, data, rows, cols, aggfunc, kwargs, observed, margins_name
         )
         if not isinstance(marginal_result_set, tuple):
             return marginal_result_set
@@ -338,26 +350,29 @@ def _add_margins(
 
 
 def _compute_grand_margin(
-    data: DataFrame, values, aggfunc, margins_name: Hashable = "All"
+    data: DataFrame, values, aggfunc, kwargs, margins_name: Hashable = "All" 
 ):
     if values:
         grand_margin = {}
         for k, v in data[values].items():
+            print("boutta print")
+            print(k)
+            print(v)
             try:
                 if isinstance(aggfunc, str):
-                    grand_margin[k] = getattr(v, aggfunc)()
+                    grand_margin[k] = getattr(v, aggfunc)(**kwargs)
                 elif isinstance(aggfunc, dict):
                     if isinstance(aggfunc[k], str):
-                        grand_margin[k] = getattr(v, aggfunc[k])()
+                        grand_margin[k] = getattr(v, aggfunc[k])(**kwargs)
                     else:
-                        grand_margin[k] = aggfunc[k](v)
+                        grand_margin[k] = aggfunc[k](v, **kwargs)
                 else:
-                    grand_margin[k] = aggfunc(v)
+                    grand_margin[k] = aggfunc(v, **kwargs)
             except TypeError:
                 pass
         return grand_margin
     else:
-        return {margins_name: aggfunc(data.index)}
+        return {margins_name: aggfunc(data.index, **kwargs)}
 
 
 def _generate_marginal_results(
@@ -367,6 +382,7 @@ def _generate_marginal_results(
     rows,
     cols,
     aggfunc,
+    kwargs,
     observed: bool,
     margins_name: Hashable = "All",
 ):
@@ -380,7 +396,7 @@ def _generate_marginal_results(
             return (key, margins_name) + ("",) * (len(cols) - 1)
 
         if len(rows) > 0:
-            margin = data[rows + values].groupby(rows, observed=observed).agg(aggfunc)
+            margin = data[rows + values].groupby(rows, observed=observed).agg(aggfunc, **kwargs)
             cat_axis = 1
 
             for key, piece in table.T.groupby(level=0, observed=observed):
@@ -405,7 +421,7 @@ def _generate_marginal_results(
                 table_pieces.append(piece)
                 # GH31016 this is to calculate margin for each group, and assign
                 # corresponded key as index
-                transformed_piece = DataFrame(piece.apply(aggfunc)).T
+                transformed_piece = DataFrame(piece.apply(aggfunc, **kwargs)).T
                 if isinstance(piece.index, MultiIndex):
                     # We are adding an empty level
                     transformed_piece.index = MultiIndex.from_tuples(
@@ -435,7 +451,7 @@ def _generate_marginal_results(
         margin_keys = table.columns
 
     if len(cols) > 0:
-        row_margin = data[cols + values].groupby(cols, observed=observed).agg(aggfunc)
+        row_margin = data[cols + values].groupby(cols, observed=observed).agg(aggfunc, **kwargs)
         row_margin = row_margin.stack()
 
         # GH#26568. Use names instead of indices in case of numeric names
@@ -454,6 +470,7 @@ def _generate_marginal_results_without_values(
     rows,
     cols,
     aggfunc,
+    kwargs,
     observed: bool,
     margins_name: Hashable = "All",
 ):
@@ -468,14 +485,14 @@ def _generate_marginal_results_without_values(
             return (margins_name,) + ("",) * (len(cols) - 1)
 
         if len(rows) > 0:
-            margin = data.groupby(rows, observed=observed)[rows].apply(aggfunc)
+            margin = data.groupby(rows, observed=observed)[rows].apply(aggfunc, **kwargs)
             all_key = _all_key()
             table[all_key] = margin
             result = table
             margin_keys.append(all_key)
 
         else:
-            margin = data.groupby(level=0, observed=observed).apply(aggfunc)
+            margin = data.groupby(level=0, observed=observed).apply(aggfunc, **kwargs)
             all_key = _all_key()
             table[all_key] = margin
             result = table
@@ -486,7 +503,7 @@ def _generate_marginal_results_without_values(
         margin_keys = table.columns
 
     if len(cols):
-        row_margin = data.groupby(cols, observed=observed)[cols].apply(aggfunc)
+        row_margin = data.groupby(cols, observed=observed)[cols].apply(aggfunc, **kwargs)
     else:
         row_margin = Series(np.nan, index=result.columns)
 
